@@ -6,7 +6,8 @@
     "mocks": "node mocks/run-mocks.js",
     "demo": "node tools/demo-send.js",
     "test": "node --test",
-    "check-workflow": "node tools/check-workflow.js"
+    "check-workflow": "node tools/check-workflow.js",
+    "start": "node mocks/run-mocks.js & node submission/failure-logger.js"
   },
   "dependencies": {
     "express": "^4.19.2",

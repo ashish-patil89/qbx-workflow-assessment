@@ -1,0 +1,361 @@
+{
+  "name": "Offline Incident Notifier (Skeleton)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incident",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "8da43cb1-6f76-4aa7-b476-110a22e9d9f0",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        32
+      ],
+      "webhookId": "cf2f97e4-bbb1-4782-b262-46b830afedf0"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:4010/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer slack-test-token"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": \"#oncall-alerts\",\n  \"text\": {{ $json.message.toJsonString() }}\n} ",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "9d47f2ce-905d-4a62-ab46-12f442b5a1d5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -224,
+        -64
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:4020/me/sendMail",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer ms-test-token"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": {\n    \"subject\": \"[{{ $json.severity }}] {{ $json.title }} - {{ $json.incidentId }}\",\n    \"body\": {\n      \"contentType\": \"Text\",\n      \"content\": {{ $json.message.toJsonString() }}\n    },\n    \"toRecipients\": [\n      {\n        \"emailAddress\": {\n          \"address\": \"{{ $json.ownerEmail }}\"\n        }\n      }\n    ]\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "5e9ed722-fe85-46ac-b914-55963f166a6b",
+      "name": "O365 Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -224,
+        128
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json.body;\n\nconst requiredFields = ['incidentId', 'severity', 'title', 'createdAt'];\nfor (const field of requiredFields) {\n  if (!item[field]) {\n    throw new Error(`Missing required field: ${field}`);\n  }\n}\n\nconst severityMap = { P1: 1, P2: 2, P3: 3, P4: 4 };\nconst severityNum = severityMap[item.severity];\nif (!severityNum) {\n  throw new Error(`Invalid severity value: ${item.severity}`);\n}\n\nfunction simpleHash(str) {\n  let hash = 0;\n  for (let i = 0; i < str.length; i++) {\n    const char = str.charCodeAt(i);\n    hash = ((hash << 5) - hash) + char;\n    hash = hash & hash; // Convert to 32bit integer\n  }\n  return Math.abs(hash).toString(16);\n}\n\nconst rawKey = `${item.incidentId}|${item.severity}|${item.createdAt}`;\nconst dedupeKey = simpleHash(rawKey);\n\nconst staticData = $getWorkflowStaticData('global');\nif (staticData[dedupeKey]) {\n  throw new Error(`Duplicate event detected. Already processed: ${item.incidentId}`);\n}\nstaticData[dedupeKey] = true;\n\nconst description = (item.description || '').substring(0, 240);\n\nconst message = `[${item.severity}/P${severityNum}] ${item.title} (${item.incidentId})\nDescription: ${description}\nStore: ${item.storeId || 'N/A'}\nCreated: ${item.createdAt}\nOwner: ${item.ownerEmail}`;\n\nreturn [{\n  json: {\n    incidentId: item.incidentId,\n    severity: item.severity,\n    severityNum,\n    title: item.title,\n    description,\n    createdAt: item.createdAt,\n    ownerEmail: item.ownerEmail,\n    storeId: item.storeId || null,\n    dedupeKey,\n    message\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        32
+      ],
+      "id": "19f15b9e-5f1e-413d-92c4-d952aa8e280c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1a5286ec-2212-4299-81d3-2f98ace3c039",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        -64
+      ],
+      "id": "a3c279ba-01b1-40a1-b6d4-667f551c9d22",
+      "name": "Slack Success"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1a5286ec-2212-4299-81d3-2f98ace3c039",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 202,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        128
+      ],
+      "id": "adbc43ce-d257-4c29-aa39-d499c6fcc24f",
+      "name": "O365 Success"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nconst failure = {\n  timestamp: new Date().toISOString(),\n  service: 'slack',\n  incidentId: input.incidentId || 'unknown',\n  statusCode: input.statusCode || 'unknown',\n  error: input.message || 'unknown error'\n};\n\nconst content = JSON.stringify(failure) + '\\n';\nconst encoded = Buffer.from(content).toString('base64');\n\nreturn [{\n  json: failure,\n  binary: {\n    data: {\n      data: encoded,\n      mimeType: 'application/json',\n      fileName: 'failures.jsonl'\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -64
+      ],
+      "id": "e01de32d-2d20-44b2-b9f9-a11bff429eb5",
+      "name": "Slack-Error logging"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nconst failure = {\n  timestamp: new Date().toISOString(),\n  service: 'o365',\n  incidentId: input.incidentId || 'unknown',\n  statusCode: input.statusCode || 'unknown',\n  error: input.message || 'unknown error'\n};\n\nconst content = JSON.stringify(failure) + '\\n';\nconst encoded = Buffer.from(content).toString('base64');\n\nreturn [{\n  json: failure,\n  binary: {\n    data: {\n      data: encoded,\n      mimeType: 'application/json',\n      fileName: 'failures.jsonl'\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        128
+      ],
+      "id": "a3e5442e-e3b1-4644-b3b1-f1eb602fc959",
+      "name": "O365-Error logging"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:4030/log-failure",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"timestamp\": \"{{ new Date().toISOString() }}\",\n  \"service\": \"slack\",\n  \"incidentId\": \"{{ $json.incidentId || 'unknown' }}\",\n  \"statusCode\": \"{{ $json.statusCode || 'unknown' }}\",\n  \"error\": \"{{ $json.message || 'unknown error' }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        448,
+        -64
+      ],
+      "id": "7d743170-6439-4fd4-a48f-b693e5caa376",
+      "name": "Slack-HTTP log Failure"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:4030/log-failure",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"timestamp\": \"{{ new Date().toISOString() }}\",\n  \"service\": \"o365\",\n  \"incidentId\": \"{{ $json.incidentId || 'unknown' }}\",\n  \"statusCode\": \"{{ $json.statusCode || 'unknown' }}\",\n  \"error\": \"{{ $json.message || 'unknown error' }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        448,
+        128
+      ],
+      "id": "9c25828f-223c-4bce-8510-cca044945dfb",
+      "name": "O365-HTTP log Failure"
+    },
+    {
+      "parameters": {
+        "content": "## Logging Node\n\n### Start mock servers + failure logger\n### Run all servers together\nnpm run start\nSlack mock :4010, MS mock :4020\nFailure logger :4030\n\n\n",
+        "height": 640,
+        "width": 448,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        368,
+        -304
+      ],
+      "typeVersion": 1,
+      "id": "4f49046a-88ae-486a-9f6a-25d0e2911cb0",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "O365 Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Notify": {
+      "main": [
+        [
+          {
+            "node": "Slack Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "O365 Email": {
+      "main": [
+        [
+          {
+            "node": "O365 Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Success": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Slack-Error logging",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "O365 Success": {
+      "main": [
+        [],
+        [
+          {
+            "node": "O365-Error logging",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack-Error logging": {
+      "main": [
+        [
+          {
+            "node": "Slack-HTTP log Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "O365-Error logging": {
+      "main": [
+        [
+          {
+            "node": "O365-HTTP log Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "f7f54288-e899-4502-b118-31d30434ccf2",
+  "meta": {
+    "instanceId": "02f308188a32991de081841c2c2928c0237e0a85748c04435db08ef833f95f43"
+  },
+  "id": "rbGFpbMqyn12cmOr",
+  "tags": []
+}
